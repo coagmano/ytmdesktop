@@ -1,7 +1,6 @@
-﻿<!DOCTYPE html>
-<html>
+﻿<html>
     <head>
-        <meta charset="utf-8" />
+        <meta charset="UTF-8" />
         <title>YouTube Music</title>
         <link
             type="text/css"
@@ -10,7 +9,6 @@
             media="screen,projection"
         />
         <link
-            type="text/css"
             href="../../../src/assets/css/material_icons.css"
             rel="stylesheet"
         />
@@ -19,8 +17,9 @@
             rel="stylesheet"
             href="../../../src/assets/css/styles.css"
         />
-        <link type="text/css" rel="stylesheet" href="./miniplayer.css" />
+        <link type="text/css" rel="stylesheet" href="./streamPlayer.css" />
     </head>
+
     <body>
         <div id="loading">
             <div class="preloader-wrapper big active">
@@ -61,15 +60,13 @@
                 </div>
 
                 <div class="duration center">
-                    <span id="current">0:00</span>
+                    <span id="current">0:00</span> /
                     <span id="duration">0:00</span>
                 </div>
 
+                <!-- These are unused however are left in here for the Mini-player to be happy without needing to re-write it. -->
                 <div class="controls">
                     <div class="pointer ctrl-btn" id="btn-dislike">
-                        <i class="material-icons hide-solid">thumb_down</i>
-
-                        <!-- This one should always be visible -->
                         <i class="material-icons outlined">thumb_down</i>
                     </div>
                     <div class="pointer ctrl-btn" id="btn-previous">
@@ -82,9 +79,6 @@
                         <i class="material-icons">skip_next</i>
                     </div>
                     <div class="pointer ctrl-btn" id="btn-like">
-                        <i class="material-icons hide-solid">thumb_up</i>
-
-                        <!-- Same for this one -->
                         <i class="material-icons outlined">thumb_up</i>
                     </div>
                 </div>
@@ -96,7 +90,7 @@
 
         <div id="background"></div>
         <div id="secondsEffect"></div>
-
-        <script src="./miniplayer.js"></script>
     </body>
+
+    <script src="./miniplayer.js"></script>
 </html>

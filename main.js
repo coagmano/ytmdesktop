@@ -44,6 +44,9 @@ const mprisProvider = (() => {
         return null
     }
 })()
+
+const { commit_hash } = require('./commit_hash')
+
 /* Variables =========================================================================== */
 const defaultUrl = 'https://music.youtube.com'
 
@@ -62,9 +65,9 @@ let mainWindow,
     doublePressPlayPause,
     updateTrackInfoTimeout,
     activityLikeStatus,
-    windowsMediaProvider,
-    audioDevices,
-    settingsRendererIPC
+    settingsRendererIPC,
+    mediaServiceProvider,
+    audioDevices
 
 let isFirstTime = false
 
@@ -125,16 +128,16 @@ if (settingsProvider.get('has-updated') === true)
         ipcMain.emit('window', { command: 'show-changelog' })
     }, 2000)
 
-if (
+/*if (
     isWindows() &&
     os.release().startsWith('10.') &&
     settingsProvider.get('settings-windows10-media-service')
-)
-    try {
-        windowsMediaProvider = require('./src/providers/windowsMediaProvider')
-    } catch (error) {
-        console.log('error windowsMediaProvider > ' + error)
-    }
+)*/
+try {
+    mediaServiceProvider = require('./src/providers/mediaServiceProvider')
+} catch (error) {
+    console.log('error mediaServiceProvider > ' + error)
+}
 
 if (isMac()) {
     settingsProvider.set(
@@ -271,8 +274,7 @@ async function createWindow() {
                 {},
                 details.requestHeaders || {},
                 {
-                    'User-Agent':
-                        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:73.0) Gecko/20100101 Firefox/73.0',
+                    'User-Agent': settingsProvider.get('user-agent'),
                 }
             )
             callback({ requestHeaders: newRequestHeaders })
@@ -395,21 +397,9 @@ async function createWindow() {
     view.webContents.on('media-started-playing', () => {
         if (!infoPlayerProvider.hasInitialized()) {
             infoPlayerProvider.init(view)
-            if (isLinux()) {
-                if (!mprisProvider._isInitialized) {
-                    mprisProvider.start()
-                }
-                mprisProvider.setRealPlayer(infoPlayerProvider) //this lets us keep track of the current time in playback.
-            }
         }
 
-        if (
-            isWindows() &&
-            os.release().startsWith('10.') &&
-            settingsProvider.get('settings-windows10-media-service') &&
-            windowsMediaProvider !== undefined
-        )
-            windowsMediaProvider.init(view)
+        mediaServiceProvider.init(view)
 
         if (isMac()) {
             global.sharedObj.paused = false
@@ -459,9 +449,6 @@ async function createWindow() {
 
         if (title && author) {
             rainmeterNowPlaying.setActivity(getAll())
-            if (isLinux()) {
-                mprisProvider.setActivity(getAll())
-            }
 
             if (settingsProvider.get('settings-enable-taskbar-progressbar')) {
                 mediaControl.setProgress(
@@ -553,18 +540,12 @@ async function createWindow() {
                 )
                     tray.balloon(title, author, cover, iconDefault)
 
-                if (
-                    isWindows() &&
-                    os.release().startsWith('10.') &&
-                    settingsProvider.get('settings-windows10-media-service') &&
-                    windowsMediaProvider !== undefined
+                mediaServiceProvider.setPlaybackData(
+                    title,
+                    author,
+                    cover,
+                    album
                 )
-                    windowsMediaProvider.setPlaybackData(
-                        title,
-                        author,
-                        cover,
-                        album
-                    )
 
                 /**
                  * Update background color for Player
@@ -652,14 +633,7 @@ async function createWindow() {
                     infoPlayerProvider.getAllInfo()
                 )
 
-                if (
-                    isWindows() &&
-                    os.release().startsWith('10.') &&
-                    settingsProvider.get('settings-windows10-media-service') &&
-                    windowsMediaProvider !== undefined
-                ) {
-                    windowsMediaProvider.setPlaybackStatus(playerInfo.isPaused)
-                }
+                mediaServiceProvider.setPlaybackStatus(playerInfo.isPaused)
             }
 
             if (activityLikeStatus !== playerInfo.likeStatus) {
@@ -1270,38 +1244,71 @@ async function createWindow() {
     async function windowMiniplayer() {
         if (miniplayer) miniplayer.show()
         else {
-            miniplayer = new BrowserWindow({
+            var miniplayerConfig = {
                 title: __.trans('LABEL_MINIPLAYER'),
                 icon: iconDefault,
                 modal: false,
                 frame: false,
                 center: false,
+
                 resizable: settingsProvider.get(
                     'settings-miniplayer-resizable'
+                ),
+                skipTaskbar: !settingsProvider.get(
+                    'settings-miniplayer-show-task'
                 ),
                 alwaysOnTop: settingsProvider.get(
                     'settings-miniplayer-always-top'
                 ),
-                width: settingsProvider.get('settings-miniplayer-size'),
-                height: settingsProvider.get('settings-miniplayer-size'),
+
                 backgroundColor: '#232323',
-                minWidth: 100,
-                minHeight: 100,
                 autoHideMenuBar: true,
-                skipTaskbar: !settingsProvider.get(
-                    'settings-miniplayer-show-task'
-                ),
                 webPreferences: {
                     nodeIntegration: true,
                     enableRemoteModule: true,
                 },
-            })
-            await miniplayer.loadFile(
-                path.join(
-                    app.getAppPath(),
-                    '/src/pages/miniplayer/miniplayer.html'
+            }
+
+            if (settingsProvider.get('settings-miniplayer-stream-config')) {
+                var streamSize = settingsProvider.get(
+                    'settings-miniplayer-stream-size'
                 )
-            )
+                if (streamSize) {
+                    miniplayerConfig.width = streamSize.x
+                    miniplayerConfig.height = streamSize.y
+                } else {
+                    miniplayerConfig.width = 500
+                    miniplayerConfig.height = 100
+                }
+
+                miniplayerConfig.minWidth = 300
+                miniplayerConfig.minHeight = 100
+
+                miniplayer = new BrowserWindow(miniplayerConfig)
+                await miniplayer.loadFile(
+                    path.join(
+                        app.getAppPath(),
+                        '/src/pages/miniplayer/streamPlayer.html'
+                    )
+                )
+            } else {
+                miniplayerConfig.width = settingsProvider.get(
+                    'settings-miniplayer-size'
+                )
+                miniplayerConfig.height = settingsProvider.get(
+                    'settings-miniplayer-size'
+                )
+                miniplayerConfig.minWidth = 100
+                miniplayerConfig.minHeight = 100
+
+                miniplayer = new BrowserWindow(miniplayerConfig)
+                await miniplayer.loadFile(
+                    path.join(
+                        app.getAppPath(),
+                        '/src/pages/miniplayer/miniplayer.html'
+                    )
+                )
+            }
 
             let miniplayerPosition = settingsProvider.get('miniplayer-position')
             if (miniplayerPosition !== undefined)
@@ -1324,13 +1331,38 @@ async function createWindow() {
             })
 
             miniplayer.on('resize', (e) => {
-                try {
-                    let size = Math.min(...miniplayer.getSize())
-                    miniplayer.setSize(size, size)
-                    settingsProvider.set('settings-miniplayer-size', size)
-                    e.preventDefault()
-                } catch (_) {
-                    writeLog({ type: 'warn', data: 'error miniplayer resize' })
+                if (
+                    !settingsProvider.get('settings-miniplayer-stream-config')
+                ) {
+                    // Square Miniplayer
+                    try {
+                        let size = Math.min(...miniplayer.getSize())
+                        miniplayer.setSize(size, size)
+                        settingsProvider.set('settings-miniplayer-size', size)
+                        e.preventDefault()
+                    } catch (_) {
+                        writeLog({
+                            type: 'warn',
+                            data: 'error miniplayer resize',
+                        })
+                    }
+                } else {
+                    // Resized
+                    try {
+                        let size = miniplayer.getSize()
+                        settingsProvider.set(
+                            'settings-miniplayer-stream-size',
+                            {
+                                x: size[0],
+                                y: size[1],
+                            }
+                        )
+                    } catch (_) {
+                        writeLog({
+                            type: 'warn',
+                            data: 'error miniplayer (stream) resize',
+                        })
+                    }
                 }
             })
 
@@ -1674,7 +1706,7 @@ async function createWindow() {
 
         const ytmdesktop_version = app.getVersion() || '-'
 
-        const template = `- [ ] I understand that %2A%2AYTMDesktop have NO affiliation with Google or YouTube%2A%2A.%0A- [ ] I verified that there is no open issue for the same subject.%0A%0A %2A%2ADescribe the bug%2A%2A%0A A clear and concise description of what the bug is.%0A%0A %2A%2ATo Reproduce%2A%2A%0A Steps to reproduce the behavior:%0A 1. Go to '...'%0A 2. Click on '....'%0A 3. See error%0A%0A %2A%2AExpected behavior%2A%2A%0A A clear and concise description of what you expected to happen.%0A%0A %2A%2AScreenshots%2A%2A%0A If applicable, add screenshots to help explain your problem.%0A%0A %2A%2AEnvironment:%2A%2A%0A %2A YTMDesktop version: %2A%2A%2Av${ytmdesktop_version}%2A%2A%2A%0A %2A OS: %2A%2A%2A${os_platform}%2A%2A%2A%0A %2A OS version: %2A%2A%2A${os_system_version}%2A%2A%2A%0A %2A Arch: %2A%2A%2A${os_arch}%2A%2A%2A%0A %2A Installation way: %2A%2A%2Alike .exe or snapcraft or another way%2A%2A%2A%0A`
+        const template = `- [ ] I understand that %2A%2AYTMDesktop have NO affiliation with Google or YouTube%2A%2A.%0A- [ ] I verified that there is no open issue for the same subject.%0A%0A %2A%2ADescribe the bug%2A%2A%0A A clear and concise description of what the bug is.%0A%0A %2A%2ATo Reproduce%2A%2A%0A Steps to reproduce the behavior:%0A 1. Go to '...'%0A 2. Click on '....'%0A 3. See error%0A%0A %2A%2AExpected behavior%2A%2A%0A A clear and concise description of what you expected to happen.%0A%0A %2A%2AScreenshots%2A%2A%0A If applicable, add screenshots to help explain your problem.%0A%0A %2A%2AEnvironment:%2A%2A%0A %2A YTMDesktop version: %2A%2A%2Av${ytmdesktop_version} ${commit_hash}%2A%2A%2A%0A %2A OS: %2A%2A%2A${os_platform}%2A%2A%2A%0A %2A OS version: %2A%2A%2A${os_system_version}%2A%2A%2A%0A %2A Arch: %2A%2A%2A${os_arch}%2A%2A%2A%0A %2A Installation way: %2A%2A%2Alike .exe or snapcraft or another way%2A%2A%2A%0A`
         await shell.openExternal(
             `https://github.com/ytmdesktop/ytmdesktop/issues/new?body=${template}`
         )
@@ -1888,26 +1920,32 @@ else {
         checkWindowPosition(
             settingsProvider.get('window-position'),
             settingsProvider.get('window-size')
-        ).then((visiblePosition) => {
-            console.log(visiblePosition)
-            settingsProvider.set('window-position', visiblePosition)
-        })
+        )
+            .then((visiblePosition) => {
+                console.log(visiblePosition)
+                settingsProvider.set('window-position', visiblePosition)
+            })
+            .catch(() => {})
 
         checkWindowPosition(settingsProvider.get('lyrics-position'), {
             width: 700,
             height: 800,
-        }).then((visiblePosition) => {
-            console.log(visiblePosition)
-            settingsProvider.set('lyrics-position', visiblePosition)
         })
+            .then((visiblePosition) => {
+                console.log(visiblePosition)
+                settingsProvider.set('lyrics-position', visiblePosition)
+            })
+            .catch(() => {})
 
-        checkWindowPosition(
-            settingsProvider.get('miniplayer-position'),
-            settingsProvider.get('settings-miniplayer-size')
-        ).then((visiblePosition) => {
-            console.log(visiblePosition)
-            settingsProvider.set('miniplayer-position', visiblePosition)
+        checkWindowPosition(settingsProvider.get('miniplayer-position'), {
+            width: settingsProvider.get('settings-miniplayer-size'),
+            height: settingsProvider.get('settings-miniplayer-size'),
         })
+            .then((visiblePosition) => {
+                console.log(visiblePosition)
+                settingsProvider.set('miniplayer-position', visiblePosition)
+            })
+            .catch(() => {})
 
         await createWindow()
 

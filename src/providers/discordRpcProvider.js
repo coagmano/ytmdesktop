@@ -41,7 +41,9 @@ async function setActivity(info) {
     if (isStarted() && info.track.title) {
         const now = Date.now()
         const activity = {}
-        const discordSettings = settingsProvider.get('discord-presence-settings')
+        const discordSettings = settingsProvider.get(
+            'discord-presence-settings'
+        )
 
         if (discordSettings.details) activity.details = info.track.title
 
@@ -61,7 +63,8 @@ async function setActivity(info) {
             }
         }
 
-        activity.largeImageKey = 'ytm_logo_512'
+        // activity.largeImageKey = 'ytm_logo_512'
+        activity.largeImageKey = info.track.cover
         activity.smallImageKey = info.player.isPaused
             ? 'discordrpc-pause'
             : 'discordrpc-play'
@@ -77,7 +80,10 @@ async function setActivity(info) {
             ]
         }
 
-        if ((!discordSettings.hideIdle && info.player.isPaused) || info.track.isAdvertisement) {
+        if (
+            (!discordSettings.hideIdle && info.player.isPaused) ||
+            info.track.isAdvertisement
+        ) {
             await client.clearActivity()
         } else {
             // As of writing this discord-rpc was not updated to support buttons with setActivity
